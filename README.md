@@ -1,7 +1,7 @@
 # Project Title: Raspberry Pi Remote Management and Reporting Platform
 
 ## Overview
-This repository is designed to organize and manage the resources for the Raspberry Pi Remote Management and Reporting Platform. It includes source code, task lists, and documentation to facilitate team collaboration and effective reporting to leadership.
+This repository is designed to organize and manage the resources for the Raspberry Pi Remote Management and Reporting Platform. It includes source code, task lists, and documentation to facilitate team collaboration and effective reporting to supervisors.
 
 ## Repository Structure
 ```plaintext
