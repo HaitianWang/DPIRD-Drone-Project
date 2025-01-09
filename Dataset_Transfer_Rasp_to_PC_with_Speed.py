@@ -2,6 +2,7 @@ import paramiko
 from scp import SCPClient
 import os
 import logging
+import time
 
 # 配置日志记录
 logging.basicConfig(
@@ -25,15 +26,26 @@ def create_ssh_client(hostname, port, username, password):
         logging.error(f"Failed to connect via SSH: {e}")
         raise
 
+def progress_callback(filename, size, sent):
+    """
+    显示文件传输的实时进度和速度。
+    """
+    progress = sent / size * 100 if size != 0 else 0
+    speed = sent / (time.time() - start_time) if start_time else 0
+    print(f"\r{filename}: {progress:.2f}% | {sent}/{size} bytes | Speed: {speed:.2f} bytes/sec", end='')
+
 def transfer_files(ssh_client, local_folder, remote_folder):
     """
     使用 SCP 将 Windows 中的文件夹传输到 Raspberry Pi 的指定目录。
     """
     try:
-        with SCPClient(ssh_client.get_transport()) as scp:
+        with SCPClient(ssh_client.get_transport(), progress=progress_callback) as scp:
             # 遍历本地文件夹
             for root, dirs, files in os.walk(local_folder):
                 for file in files:
+                    global start_time
+                    start_time = time.time()  # 记录文件传输开始时间
+
                     local_file = os.path.join(root, file)
                     relative_path = os.path.relpath(local_file, local_folder)
                     remote_file = os.path.join(remote_folder, relative_path)
@@ -52,14 +64,14 @@ def transfer_files(ssh_client, local_folder, remote_folder):
 
 def main():
     # 配置连接信息
-    hostname = '192.168.1.100'  # Raspberry Pi 的 IP 地址
+    hostname = '172.20.10.2'  # Raspberry Pi 的 IP 地址
     port = 22  # SSH 默认端口
-    username = 'pi'  # 树莓派用户名
-    password = 'raspberry'  # 树莓派密码
+    username = 'haitianrasp'  # 树莓派用户名
+    password = 'qwer'  # 树莓派密码
 
     # 本地文件夹和树莓派目标目录
-    local_folder = r'C:\Users\YourUserName\Dataset'  # Windows 中的图片数据集目录
-    remote_folder = '/home/pi/Dataset'  # 树莓派中的目标目录
+    local_folder = r'D:\Photogrammetry 2024\Hadlow\20240716 Hadlow\DJI_202407161308_001'  # Windows 中的图片数据集目录
+    remote_folder = '/home/haitianrasp/Dataset/'  # 树莓派中的目标目录
 
     # 检查本地文件夹是否存在
     if not os.path.exists(local_folder):
@@ -81,20 +93,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
