@@ -2,26 +2,6 @@ Raspberry Pi and UAV Remote Management and Reporting Platform
 
 ## Overview
 This repository is designed to organize and manage the resources for the UAV and Raspberry Pi Remote Management and Reporting Platform. It includes source code, task lists, and documentation to facilitate team collaboration and effective reporting to supervisors.
-
-## Repository Structure
-```plaintext
-├── Code/               # Project source code
-│   ├── src/            # Core source code files
-│   ├── scripts/        # Automation and utility scripts
-│   └── README.md       # Code section documentation
-├── Docs/               # Documentation
-│   ├── Reports/        # Meeting and progress reports
-│   ├── TaskList.md     # Current tasks and progress tracking
-│   └── README.md       # Documentation overview
-├── Data/               # Project datasets
-│   ├── raw/            # Raw input data
-│   ├── processed/      # Processed data for analysis
-│   └── README.md       # Data usage and description
-├── Tests/              # Testing scripts and cases
-│   ├── test_cases/     # Test cases for validation
-│   └── README.md       # Testing overview
-├── LICENSE             # License file (if applicable)
-└── README.md           # Main repository documentation
 ```
 
 ## Features
