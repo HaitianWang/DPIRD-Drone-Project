@@ -1,0 +1,579 @@
+使用相机管理功能
+#1. 相机管理模块初始化
+使用 PSDK 开发的负载设备如需控制相机功能，需要先调用DjiCameraManager_Init()接口初始化相机管理模块。
+
+USER_LOG_INFO("--> Step 1: Init camera manager module");
+DjiTest_WidgetLogAppend("--> Step 1: Init camera manager module");
+returnCode = DjiCameraManager_Init();
+if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+    USER_LOG_ERROR("Init camera manager failed, error code: 0x%08X\r\n", returnCode);
+    goto exitCameraModule;
+}
+#2. 获取相机类型和版本
+开发者可通过分别调用DjiCameraManager_GetCameraType和DjiCameraManager_GetFirmwareVersion接口来获取无人机上指定挂载位置的相机类型和版本。
+
+    USER_LOG_INFO("--> Step 2: Get camera type and version");
+    DjiTest_WidgetLogAppend("--> Step 2: Get camera type and version");
+    returnCode = DjiCameraManager_GetCameraType(mountPosition, &cameraType);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Get mounted position %d camera's type failed, error code: 0x%08X\r\n",
+                       mountPosition, returnCode);
+        goto exitCameraModule;
+    }
+    USER_LOG_INFO("Mounted position %d camera's type is %s",
+                  mountPosition,
+                  s_cameraTypeStrList[DjiTest_CameraManagerGetCameraTypeIndex(cameraType)].cameraTypeStr);
+
+    returnCode = DjiCameraManager_GetFirmwareVersion(mountPosition, &firmwareVersion);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Get mounted position %d camera's firmware version failed, error code: 0x%08X\r\n",
+                       mountPosition, returnCode);
+        goto exitCameraModule;
+    }
+    USER_LOG_INFO("Mounted position %d camera's firmware is V%d.%d.%d.%d\r\n", mountPosition,
+                  firmwareVersion.firmware_version[0], firmwareVersion.firmware_version[1],
+                  firmwareVersion.firmware_version[2], firmwareVersion.firmware_version[3]);
+#3. 设置或获取相机参数
+相机管理提供一系列的 Set 或者 Get 接口，可以设置或获取指定挂载位置的相机参数，如可以通过分别调用DjiCameraManager_GetISO和DjiCameraManager_SetISO接口来获取和设置相机的 ISO 参数。
+
+T_DjiReturnCode returnCode;
+E_DjiCameraManagerISO isoDataTemp;
+
+returnCode = DjiCameraManager_GetISO(position, &isoDataTemp);
+if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS &&
+    returnCode != DJI_ERROR_CAMERA_MANAGER_MODULE_CODE_UNSUPPORTED_COMMAND) {
+    USER_LOG_ERROR("Get mounted position %d camera's iso failed, error code: 0x%08X.",
+                   position, returnCode);
+    return returnCode;
+}
+
+if (isoDataTemp == isoData) {
+    USER_LOG_INFO("The mounted position %d camera's iso is already what you expected.",
+                  position);
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+
+returnCode = DjiCameraManager_SetISO(position, isoData);
+if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS &&
+    returnCode != DJI_ERROR_CAMERA_MANAGER_MODULE_CODE_UNSUPPORTED_COMMAND) {
+    USER_LOG_ERROR("Set mounted position %d camera's iso %d failed, "
+                   "error code: 0x%08X.", position, isoData, returnCode);
+}
+
+return returnCode;
+#4. 控制相机执行指定的动作
+开发者可通过调用对应的接口来执行指定的相机动作，如调用DjiCameraManager_StartShootPhoto接口可以控制指定位置的相机进行拍照的操作。
+
+/*!< start to shoot single photo */
+USER_LOG_INFO("Mounted position %d camera start to shoot photo", position);
+returnCode = DjiCameraManager_StartShootPhoto(position, DJI_CAMERA_MANAGER_SHOOT_PHOTO_MODE_SINGLE);
+if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+    USER_LOG_ERROR("Mounted position %d camera shoot photo failed, "
+                   "error code :0x%08X", position, returnCode);
+}
+#5. 订阅相机实时三维点云数据
+注意： 仅支持 L2 相机，可搭载在 M300 RTK，M350 RTK 上。
+
+开发者可以通过调用以下 Sample 来订阅 L2 相机的实时三维点云数据，注意在订阅实时三维点云数据时，需要关闭 DJI Pilot 2，否则 PSDK 将无法订阅 L2 相机的三维点云数据。
+
+returnCode = DjiTest_CameraManagerSubscribePointCloud(mountPosition);
+if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+    USER_LOG_ERROR("Fail to download point cloud. position %d, error code 0x%08llX",
+               mountPosition, returnCode);
+    goto exitCameraModule;
+}
+#6. 下载和删除相机原始媒体文件
+开发者可以通过调用以下 Sample 来下载和删除大疆相机拍摄的媒体文件，支持下载的媒体文件格式包括：JPG、DNG、MOV、MP4、LDRT（点云抽稀文件，仅 L2 相机支持），LDR（点云原始文件，仅 L2 相机支持），其中 LDRT 和 LDR 格式的媒体文件不支持删除。
+
+DjiTest_CameraManagerMediaDownloadAndDeleteMediaFile(mountPosition);
+
+
+
+实现相机类基础功能
+请开发者根据选用的开发平台以及行业应用实际的使用需求，按照 PSDK 中的结构体T_DjiCameraCommonHandler 构造实现相机类负载设备设置相机模式、拍照和录像等功能的函数，将相机功能的函数注册到 PSDK 中指定的接口后，用户通过使用 DJI Pilot 或基于 MSDK 开发的移动端 App 能够控制基于 PSDK 开发的相机类负载设备执行相应的动作。
+
+    // 获取负载设备系统当前的状态
+    s_commonHandler.GetSystemState = GetSystemState;
+    // 实现设置相机类负载设备模式的功能
+    s_commonHandler.SetMode = SetMode;
+    s_commonHandler.GetMode = DjiTest_CameraGetMode;
+    // 实现开始或停止录像的功能
+    s_commonHandler.StartRecordVideo = StartRecordVideo;
+    s_commonHandler.StopRecordVideo = StopRecordVideo;
+    // 实现开始或停止拍照的功能
+    s_commonHandler.StartShootPhoto = StartShootPhoto;
+    s_commonHandler.StopShootPhoto = StopShootPhoto;
+    // 实现设置相机类负载设备的拍照功能
+    s_commonHandler.SetShootPhotoMode = SetShootPhotoMode;
+    s_commonHandler.GetShootPhotoMode = GetShootPhotoMode;
+    s_commonHandler.SetPhotoBurstCount = SetPhotoBurstCount;
+    s_commonHandler.GetPhotoBurstCount = GetPhotoBurstCount;
+    s_commonHandler.SetPhotoTimeIntervalSettings = SetPhotoTimeIntervalSettings;
+    s_commonHandler.GetPhotoTimeIntervalSettings = GetPhotoTimeIntervalSettings;
+    // 实现 SD 卡管理功能
+    s_commonHandler.GetSDCardState = GetSDCardState;
+    s_commonHandler.FormatSDCard = FormatSDCard;
+#基础功能初始化
+使用 PSDK 开发负载设备的相机功能时，必须要初始化相机模块并注册相机类的功能。
+
+#相机类功能模块初始化
+在使用相机类功能前，必须先调用接口DjiPayloadCamera_Init初始化相机类负载设备，确保相机类负载设备可正常工作。
+
+T_PsdkReturnCode returnCode;
+
+returnCode = DjiPayloadCamera_Init();
+if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+    USER_LOG_ERROR("payload camera init error:0x%08llX", returnCode);
+}
+#注册相机类基础功能
+开发者实现相机类负载设备设置相机模式、拍照和录像等功能后，需要通过DjiPayloadCamera_RegCommonHandler注册相机类基础功能。
+
+returnCode = DjiPayloadCamera_RegCommonHandler(&s_commonHandler);
+if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+    USER_LOG_ERROR("camera register common handler error:0x%08llX", returnCode);
+}
+#使用 SD 卡管理功能
+说明：
+
+使用 X-Port 开发的相机类负载设备需要实现存储媒体文件的功能并将该功能注册到 PSDK 指定的接口中。X-Port 上的存储卡仅支持存放 X-Port 日志信息，无法存储负载设备产生的媒体文件。
+本教程以模拟SD 卡管理功能为例，介绍使用 PSDK SD 卡管理功能的使用方法，如需开发具有 SD 卡管理功能的负载设备，请调用负载设备系统的接口实现 SD 卡管理功能。
+#SD 卡模块初始化
+使用 SD 卡管理功能，需要开发者先开发并注册操作 SD 卡功能的函数，通过初始化 SD 卡管理模块，获取 SD 卡的状态信息。
+
+    /* Init the SDcard parameters */
+    s_cameraSDCardState.isInserted = true;
+    s_cameraSDCardState.isVerified = true;
+    s_cameraSDCardState.totalSpaceInMB = SDCARD_TOTAL_SPACE_IN_MB;
+    s_cameraSDCardState.remainSpaceInMB = SDCARD_TOTAL_SPACE_IN_MB;
+    s_cameraSDCardState.availableCaptureCount = SDCARD_TOTAL_SPACE_IN_MB / SDCARD_PER_PHOTO_SPACE_IN_MB;
+    s_cameraSDCardState.availableRecordingTimeInSeconds = SDCARD_TOTAL_SPACE_IN_MB / SDCARD_PER_SECONDS_RECORD_SPACE_IN_MB;
+#获取 SD 卡的当前状态
+基于 PSDK 开发的负载设备控制程序调用GetSDCardState接口能够获取负载设备上 SD 卡当前的状态，用户使用 DJI Pilot 以及基于 MSDK 开发的 APP 能够查看负载设备中 SD 卡的状态信息。
+
+// 预估可拍照张数和可录像时长的功能。
+if (s_cameraState.isRecording) {
+    s_cameraState.currentVideoRecordingTimeInSeconds++;
+    s_cameraSDCardState.remainSpaceInMB =
+        s_cameraSDCardState.remainSpaceInMB - SDCARD_PER_SECONDS_RECORD_SPACE_IN_MB;
+    if (s_cameraSDCardState.remainSpaceInMB > SDCARD_TOTAL_SPACE_IN_MB) {
+        s_cameraSDCardState.remainSpaceInMB = 0;
+        s_cameraSDCardState.isFull = true;
+    }
+}
+// 获取 SD 卡的状态
+static T_DjiReturnCode GetSDCardState(T_DjiCameraSDCardState *sdCardState)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    memcpy(sdCardState, &s_cameraSDCardState, sizeof(T_DjiCameraSDCardState));
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+#使用 SD 卡格式化功能
+基于 PSDK 开发的负载设备控制程序调用FormatSDCard接口能够控制负载设备执行 SD 卡格式化，用户使用 DJI Pilot 以及基于 MSDK 开发的 APP 可获取负载设备中 SD 卡的状态信息并控制负载设备执行 SD 卡格式化功能，如 图 1. SD 卡管理功能 所示。
+
+static T_DjiReturnCode FormatSDCard(void)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    USER_LOG_INFO("format sdcard");
+
+    memset(&s_cameraSDCardState, 0, sizeof(T_DjiCameraSDCardState));
+    s_cameraSDCardState.isInserted = true;
+    s_cameraSDCardState.isVerified = true;
+    s_cameraSDCardState.totalSpaceInMB = SDCARD_TOTAL_SPACE_IN_MB;
+    s_cameraSDCardState.remainSpaceInMB = SDCARD_TOTAL_SPACE_IN_MB;
+    s_cameraSDCardState.availableCaptureCount = SDCARD_TOTAL_SPACE_IN_MB / SDCARD_PER_PHOTO_SPACE_IN_MB;
+    s_cameraSDCardState.availableRecordingTimeInSeconds =
+    SDCARD_TOTAL_SPACE_IN_MB / SDCARD_PER_SECONDS_RECORD_SPACE_IN_MB;
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+图 1. SD 卡管理功能
+
+
+
+#使用模式设置功能
+基于 PSDK 开发的负载设备控制程序调用SetMode和GetMode接口能够设置相机的模式，用户使用 DJI Pilot 能够切换相机类负载设备的工作模式，如 图 2. 设置相机模式 所示。
+
+static T_DjiReturnCode GetSystemState(T_DjiCameraSystemState *systemState)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    *systemState = s_cameraState;
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+
+static T_DjiReturnCode SetMode(E_DjiCameraMode mode)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    s_cameraState.cameraMode = mode;
+    USER_LOG_INFO("set camera mode:%d", mode);
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+
+T_DjiReturnCode DjiTest_CameraGetMode(E_DjiCameraMode *mode)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    *mode = s_cameraState.cameraMode;
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+图 2. 设置相机类负载设备的模式
+
+
+
+#使用拍照功能
+说明：
+
+使用拍照功能前，用户需要在 DJI Pilot 或基于 MSDK 开发的移动端 App 上将相机类负载设备的工作模式设置为拍照模式。
+使用 PSDK 开发的负载设备在拍照时，会向 DJI Pilot 或基于 MSDK 开发的移动端 App 返回拍照状态（用于如触发移动端 App 拍照声音等功能）。
+#设置相机类负载设备的拍照模式
+基于 PSDK 开发的负载设备控制程序调用SetShootPhotoMode和GetShootPhotoMode接口能够设置并获取相机类负载设备的模式，用户使用 DJI Pilot 以及基于 MSDK 开发的移动端 App 可设置并获取相机类负载设备的拍照模式。
+
+static T_DjiReturnCode SetShootPhotoMode(E_DjiCameraShootPhotoMode mode)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    s_cameraShootPhotoMode = mode;
+    USER_LOG_INFO("set shoot photo mode:%d", mode);
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+
+static T_DjiReturnCode GetShootPhotoMode(E_DjiCameraShootPhotoMode *mode)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    *mode = s_cameraShootPhotoMode;
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);\
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+#控制相机单拍
+基于 PSDK 开发的负载设备控制程序调用StartShootPhoto和StopShootPhoto接口控制相机类负载设备拍摄单张照片，用户使用 DJI Pilot 以及基于 MSDK 开发的移动端 App 可控制相机类负载设备拍摄单张照片。
+
+static T_DjiReturnCode StartShootPhoto(void)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    USER_LOG_INFO("start shoot photo");
+    s_cameraState.isStoring = true;
+
+    if (s_cameraShootPhotoMode == DJI_CAMERA_SHOOT_PHOTO_MODE_SINGLE) {
+        s_cameraState.shootingState = DJI_CAMERA_SHOOTING_SINGLE_PHOTO;
+    } else if (s_cameraShootPhotoMode == DJI_CAMERA_SHOOT_PHOTO_MODE_BURST) {
+        s_cameraState.shootingState = DJI_CAMERA_SHOOTING_BURST_PHOTO;
+    } else if (s_cameraShootPhotoMode == DJI_CAMERA_SHOOT_PHOTO_MODE_INTERVAL) {
+        s_cameraState.shootingState = DJI_CAMERA_SHOOTING_INTERVAL_PHOTO;
+        s_cameraState.isShootingIntervalStart = true;
+        s_cameraState.currentPhotoShootingIntervalTimeInSeconds = s_cameraPhotoTimeIntervalSettings.timeIntervalSeconds;
+    }
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+
+static T_DjiReturnCode StopShootPhoto(void)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    USER_LOG_INFO("stop shoot photo");
+    s_cameraState.shootingState = DJI_CAMERA_SHOOTING_PHOTO_IDLE;
+    s_cameraState.isStoring = false;
+    s_cameraState.isShootingIntervalStart = false;
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+
+#控制相机连拍
+基于 PSDK 开发的负载设备控制程序调用SetPhotoBurstCount和GetPhotoBurstCount接口控制相机类负载设备连拍，用户使用 DJI Pilot 以及基于 MSDK 开发的移动端 App 可设置相机类负载设备的连拍张数，控制相机类负载设备拍摄指定数量的照片。
+
+static T_DjiReturnCode SetPhotoBurstCount(E_DjiCameraBurstCount burstCount)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    s_cameraBurstCount = burstCount;
+    USER_LOG_INFO("set photo burst count:%d", burstCount);
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+
+static T_DjiReturnCode GetPhotoBurstCount(E_DjiCameraBurstCount *burstCount)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    *burstCount = s_cameraBurstCount;
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+#控制相机定时拍照
+基于 PSDK 开发的负载设备控制程序调用SetPhotoTimeIntervalSettings和GetPhotoTimeIntervalSettings接口控制相机类负载设备定时拍照，用户使用 DJI Pilot 以及基于 MSDK 开发的移动端 App 可设置相机类负载设备的拍照间隔，控制相机类负载设备按照指定的时间间隔拍摄照片。
+
+static T_DjiReturnCode SetPhotoTimeIntervalSettings(T_DjiCameraPhotoTimeIntervalSettings settings)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    s_cameraPhotoTimeIntervalSettings.captureCount = settings.captureCount;
+    s_cameraPhotoTimeIntervalSettings.timeIntervalSeconds = settings.timeIntervalSeconds;
+    USER_LOG_INFO("set photo interval settings count:%d seconds:%d", settings.captureCount,
+                  settings.timeIntervalSeconds);
+    s_cameraState.currentPhotoShootingIntervalCount = settings.captureCount;
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+
+static T_DjiReturnCode GetPhotoTimeIntervalSettings(T_DjiCameraPhotoTimeIntervalSettings *settings)
+{
+    T_DjiReturnCode returnCode;
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+
+    returnCode = osalHandler->MutexLock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("lock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    memcpy(settings, &s_cameraPhotoTimeIntervalSettings, sizeof(T_DjiCameraPhotoTimeIntervalSettings));
+
+    returnCode = osalHandler->MutexUnlock(s_commonMutex);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("unlock mutex error: 0x%08llX.", returnCode);
+        return returnCode;
+    }
+
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+#拍照状态管理
+在 DJI Pilot 以及使用 MSDK 开发的移动端 App 中点击 “拍照” 按钮后，使用 PSDK 开发的相机类负载设备在自定义时间内（如 0.5s）在线程中执行拍照、照片存储和内存状态更新的操作。
+
+#确认拍照状态
+使用 PSDK 开发的相机类负载设备在执行完拍照动作后，需要获取负载设备的拍照状态。
+
+if (s_cameraState.shootingState != PSDK_CAMERA_SHOOTING_PHOTO_IDLE &&
+    photoCnt++ > TAKING_PHOTO_SPENT_TIME_MS_EMU / (1000 / PAYLOAD_CAMERA_EMU_TASK_FREQ)) {
+    s_cameraState.isStoring = false;
+    s_cameraState.shootingState = PSDK_CAMERA_SHOOTING_PHOTO_IDLE;
+    photoCnt = 0;
+}
+#存储照片
+相机类负载设备在执行完拍照后，使用 PSDK 开发的相机类负载设备将相机拍摄的照片存储在相机类负载设备上的内存卡中。
+
+存储单拍模式下相机类负载设备拍摄的照片
+if (s_cameraShootPhotoMode == DJI_CAMERA_SHOOT_PHOTO_MODE_SINGLE) {
+    s_cameraSDCardState.remainSpaceInMB =
+        s_cameraSDCardState.remainSpaceInMB - SDCARD_PER_PHOTO_SPACE_IN_MB;
+    s_cameraState.isStoring = false;
+    s_cameraState.shootingState = DJI_CAMERA_SHOOTING_PHOTO_IDLE;
+}
+存储连拍模式下相机类负载设备拍摄的照片
+else if (s_cameraShootPhotoMode == DJI_CAMERA_SHOOT_PHOTO_MODE_BURST) {
+    s_cameraSDCardState.remainSpaceInMB =
+        s_cameraSDCardState.remainSpaceInMB - SDCARD_PER_PHOTO_SPACE_IN_MB * s_cameraBurstCount;
+    s_cameraState.isStoring = false;
+    s_cameraState.shootingState = DJI_CAMERA_SHOOTING_PHOTO_IDLE;
+}
+存储定时拍照模式下相机类负载设备拍摄的照片
+else if (s_cameraShootPhotoMode == DJI_CAMERA_SHOOT_PHOTO_MODE_INTERVAL) {
+    if (isStartIntervalPhotoAction == true) {
+        s_cameraState.isStoring = false;
+        s_cameraState.shootingState = DJI_CAMERA_SHOOTING_PHOTO_IDLE;
+        s_cameraSDCardState.remainSpaceInMB =
+            s_cameraSDCardState.remainSpaceInMB - SDCARD_PER_PHOTO_SPACE_IN_MB;
+    }
+}
+#检查存储空间
+为确保相机类负载设备中的 SD 卡在相机类负载设备执行拍照动作后，有充足的存储空间存储照片或视频，建议在使用 PSDK 开发的相机类负载设备中添加检查 SD 卡存储空间的功能。
+
+检查相机类负载设备执行单拍和连拍后 SD 卡剩余的存储空间。
+if (s_cameraSDCardState.remainSpaceInMB > SDCARD_TOTAL_SPACE_IN_MB) {
+    s_cameraSDCardState.remainSpaceInMB = 0;
+    s_cameraSDCardState.isFull = true;
+}
+检查相机类负载设备执行定时拍照后 SD 卡剩余的存储空间
+if (s_cameraShootPhotoMode == DJI_CAMERA_SHOOT_PHOTO_MODE_INTERVAL) {
+    if (isStartIntervalPhotoAction == true) {
+        s_cameraState.isStoring = false;
+        s_cameraState.shootingState = DJI_CAMERA_SHOOTING_PHOTO_IDLE;
+        s_cameraSDCardState.remainSpaceInMB =
+            s_cameraSDCardState.remainSpaceInMB - SDCARD_PER_PHOTO_SPACE_IN_MB;
+    }
+}
+使用遥控器可以控制相机类负载设备执行拍照动作，如 图 3. 拍照 所示。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
